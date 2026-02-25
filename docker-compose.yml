@@ -2,7 +2,7 @@ version: '3.9'
 
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:15-alpine
     container_name: hrms_lite_db
     environment:
       POSTGRES_DB: hrms_lite
@@ -16,7 +16,7 @@ services:
       timeout: 3s
       retries: 20
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql/data
 
   backend:
     build:
@@ -49,4 +49,4 @@ services:
       - backend
 
 volumes:
-  postgres_data:
+  db_data:
