@@ -254,3 +254,14 @@ docker compose up --build
 - Add CI pipeline for lint/test/migrations
 - Add structured logging and monitoring
 - Add rate limiting and audit logs
+
+## Environment Variables
+
+### Backend (Super Admin Key)
+
+- `SUPERADMIN_KEY`  
+  **Required.** The shared secret key for superadmin access.  
+  Set this in `backend/.env`:
+  ```dotenv
+  SUPERADMIN_KEY=kjgdfhkgjhd-fjgkehslgjg
+  ```
