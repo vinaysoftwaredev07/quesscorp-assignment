@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Alembic / DB
+*.sqlite3
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Logs
+*.log
+.runtime/
+
+# macOS
+.DS_Store
