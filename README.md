@@ -86,8 +86,8 @@ Notes:
 - `--wait` blocks until health checks pass for backend/frontend.
 - venv mode writes logs to `.runtime/logs/` and PID files to `.runtime/pids/`.
 - Processes are launched detached and continue running after SSH disconnect.
-- Docker mode URLs: frontend `http://localhost:5173`, backend `http://localhost:8001`.
-- venv mode URLs: frontend `http://localhost:5173`, backend `http://localhost:8000`.
+- Docker mode URLs: frontend `http://<server-ip>:5173`, backend `http://<server-ip>:8001`.
+- venv mode URLs: frontend `http://<server-ip>:5173`, backend `http://<server-ip>:8000`.
 
 Environment overrides (optional):
 - `HRMS_HOST` (default: `127.0.0.1`)
@@ -166,7 +166,7 @@ Start frontend:
 npm run dev
 ```
 
-Frontend runs at `http://localhost:5173`.
+Frontend runs at `http://<server-ip>:5173`.
 When opening the UI, enter the shared superadmin key on the sign-in screen.
 
 ## Testing
