@@ -16,7 +16,8 @@ export default defineConfig({
   },
   server: {
     allowedHosts: [
-      'quest-fe.vinaykr.in'
+      'quest-fe.vinaykr.in',
+      'localhost',
     ],
   },
 });
