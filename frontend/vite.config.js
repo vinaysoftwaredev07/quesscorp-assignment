@@ -14,4 +14,9 @@ export default defineConfig({
       exclude: ['src/main.jsx'],
     },
   },
+  server: {
+    allowedHosts: [
+      'quest-fe.vinaykr.in'
+    ],
+  },
 });
