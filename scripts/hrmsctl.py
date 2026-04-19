@@ -31,6 +31,21 @@ FRONTEND_PID_FILE = PID_DIR / "frontend.pid"
 BACKEND_LOG_FILE = LOG_DIR / "backend.log"
 FRONTEND_LOG_FILE = LOG_DIR / "frontend.log"
 
+
+def load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
 def env_int(name: str, default: int) -> int:
     raw = os.getenv(name)
     if raw is None:
@@ -41,12 +56,20 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
+load_env_file(ROOT_DIR / ".env")
+
+
 HRMS_HOST = os.getenv("HRMS_HOST", "127.0.0.1")
 
 DOCKER_BACKEND_PORT = env_int("HRMS_DOCKER_BACKEND_PORT", 8001)
 DOCKER_FRONTEND_PORT = env_int("HRMS_DOCKER_FRONTEND_PORT", 5173)
 VENV_BACKEND_PORT = env_int("HRMS_VENV_BACKEND_PORT", 8000)
 VENV_FRONTEND_PORT = env_int("HRMS_VENV_FRONTEND_PORT", 5173)
+
+DOCKER_BACKEND_MIN_INSTANCES = env_int("HRMS_DOCKER_BACKEND_MIN_INSTANCES", 1)
+DOCKER_BACKEND_MAX_INSTANCES = env_int("HRMS_DOCKER_BACKEND_MAX_INSTANCES", 4)
+DOCKER_FRONTEND_MIN_INSTANCES = env_int("HRMS_DOCKER_FRONTEND_MIN_INSTANCES", 1)
+DOCKER_FRONTEND_MAX_INSTANCES = env_int("HRMS_DOCKER_FRONTEND_MAX_INSTANCES", 4)
 
 DOCKER_BACKEND_HEALTH_URL = os.getenv(
     "HRMS_DOCKER_BACKEND_HEALTH_URL",
@@ -64,6 +87,67 @@ VENV_FRONTEND_URL = os.getenv(
     "HRMS_VENV_FRONTEND_URL",
     f"http://{HRMS_HOST}:{VENV_FRONTEND_PORT}",
 )
+
+
+def validate_instance_bounds(service: str, minimum: int, maximum: int) -> None:
+    if minimum < 1:
+        raise ValueError(f"{service} minimum instances must be at least 1")
+    if maximum < minimum:
+        raise ValueError(f"{service} maximum instances must be greater than or equal to minimum instances")
+
+
+def clamp_instance_count(service: str, requested: int | None, minimum: int, maximum: int) -> int:
+    validate_instance_bounds(service, minimum, maximum)
+    if requested is None:
+        return minimum
+    if requested < minimum:
+        print(f"[hrmsctl] Requested {service} instances {requested} is below minimum {minimum}; using {minimum}.")
+        return minimum
+    if requested > maximum:
+        print(f"[hrmsctl] Requested {service} instances {requested} exceeds maximum {maximum}; using {maximum}.")
+        return maximum
+    return requested
+
+
+def print_docker_scaling_bounds() -> None:
+    print(
+        "[hrmsctl] Docker scaling bounds: "
+        f"backend={DOCKER_BACKEND_MIN_INSTANCES}-{DOCKER_BACKEND_MAX_INSTANCES}, "
+        f"frontend={DOCKER_FRONTEND_MIN_INSTANCES}-{DOCKER_FRONTEND_MAX_INSTANCES}"
+    )
+
+
+def build_docker_compose_up_command(
+    build: bool,
+    backend_instances: int | None = None,
+    frontend_instances: int | None = None,
+) -> list[str]:
+    command = ["docker", "compose", "up", "-d", "--force-recreate"]
+    if build:
+        command.append("--build")
+
+    target_backend_instances = clamp_instance_count(
+        "backend",
+        backend_instances,
+        DOCKER_BACKEND_MIN_INSTANCES,
+        DOCKER_BACKEND_MAX_INSTANCES,
+    )
+    target_frontend_instances = clamp_instance_count(
+        "frontend",
+        frontend_instances,
+        DOCKER_FRONTEND_MIN_INSTANCES,
+        DOCKER_FRONTEND_MAX_INSTANCES,
+    )
+
+    command.extend(
+        [
+            "--scale",
+            f"backend={target_backend_instances}",
+            "--scale",
+            f"frontend={target_frontend_instances}",
+        ]
+    )
+    return command
 
 
 def ensure_runtime_dirs() -> None:
@@ -146,11 +230,18 @@ def ensure_env_files() -> None:
         frontend_env.write_text(frontend_example.read_text(encoding="utf-8"), encoding="utf-8")
 
 
-def start_docker(build: bool, wait: bool) -> None:
+def start_docker(
+    build: bool,
+    wait: bool,
+    backend_instances: int | None = None,
+    frontend_instances: int | None = None,
+) -> None:
     print("[hrmsctl] Starting services using Docker Compose...")
-    command = ["docker", "compose", "up", "-d", "--force-recreate"]
-    if build:
-        command.append("--build")
+    command = build_docker_compose_up_command(
+        build=build,
+        backend_instances=backend_instances,
+        frontend_instances=frontend_instances,
+    )
     run_command(command, cwd=ROOT_DIR)
 
     if wait:
@@ -161,6 +252,27 @@ def start_docker(build: bool, wait: bool) -> None:
 
     print("[hrmsctl] Docker services started in detached mode.")
     print("[hrmsctl] Check status: docker compose ps")
+    print_docker_scaling_bounds()
+    print_service_urls(DOCKER_BACKEND_HEALTH_URL, DOCKER_FRONTEND_URL)
+
+
+def scale_docker(backend_instances: int | None, frontend_instances: int | None, wait: bool) -> None:
+    print("[hrmsctl] Scaling Docker services within configured bounds...")
+    command = build_docker_compose_up_command(
+        build=False,
+        backend_instances=backend_instances,
+        frontend_instances=frontend_instances,
+    )
+    run_command(command, cwd=ROOT_DIR)
+
+    if wait:
+        backend_ready = wait_for_http(DOCKER_BACKEND_HEALTH_URL)
+        frontend_ready = wait_for_http(DOCKER_FRONTEND_URL)
+        if not (backend_ready and frontend_ready):
+            raise RuntimeError("Services scaled but health checks timed out")
+
+    print("[hrmsctl] Docker services scaled.")
+    print_docker_scaling_bounds()
     print_service_urls(DOCKER_BACKEND_HEALTH_URL, DOCKER_FRONTEND_URL)
 
 
@@ -172,6 +284,7 @@ def stop_docker() -> None:
 
 def status_docker() -> None:
     run_command(["docker", "compose", "ps"], cwd=ROOT_DIR, check=False)
+    print_docker_scaling_bounds()
     print(f"[hrmsctl] Backend healthy: {wait_for_http(DOCKER_BACKEND_HEALTH_URL, timeout_seconds=3)}")
     print(f"[hrmsctl] Frontend reachable: {wait_for_http(DOCKER_FRONTEND_URL, timeout_seconds=3)}")
 
@@ -272,7 +385,7 @@ def status_venv() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="HRMS Lite process manager")
-    parser.add_argument("action", choices=["start", "stop", "status"], help="Action to perform")
+    parser.add_argument("action", choices=["start", "stop", "status", "scale"], help="Action to perform")
     parser.add_argument(
         "-p",
         "--platform",
@@ -282,6 +395,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--build", action="store_true", help="Docker mode: build images before start")
     parser.add_argument("--wait", action="store_true", help="Wait for frontend/backend health checks")
+    parser.add_argument("--backend-instances", type=int, help="Docker mode: desired backend replica count")
+    parser.add_argument("--frontend-instances", type=int, help="Docker mode: desired frontend replica count")
     return parser.parse_args()
 
 
@@ -294,12 +409,25 @@ def main() -> int:
     try:
         if platform == "docker":
             if action == "start":
-                start_docker(build=args.build, wait=args.wait)
+                start_docker(
+                    build=args.build,
+                    wait=args.wait,
+                    backend_instances=args.backend_instances,
+                    frontend_instances=args.frontend_instances,
+                )
+            elif action == "scale":
+                scale_docker(
+                    backend_instances=args.backend_instances,
+                    frontend_instances=args.frontend_instances,
+                    wait=args.wait,
+                )
             elif action == "stop":
                 stop_docker()
             else:
                 status_docker()
         else:
+            if action == "scale":
+                raise ValueError("scale action is only supported for docker platform")
             if action == "start":
                 start_venv(wait=args.wait)
             elif action == "stop":

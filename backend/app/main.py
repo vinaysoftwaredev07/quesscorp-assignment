@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,10 +9,22 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.events import get_event_broker
 
 settings = get_settings()
 
-app = FastAPI(title=settings.app_name, debug=settings.app_debug)
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    broker = get_event_broker()
+    broker.start_listener()
+    try:
+        yield
+    finally:
+        broker.stop_listener()
+
+
+app = FastAPI(title=settings.app_name, debug=settings.app_debug, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

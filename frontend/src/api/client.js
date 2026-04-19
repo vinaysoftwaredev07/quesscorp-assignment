@@ -1,8 +1,17 @@
 import axios from 'axios';
 import { getStoredAdminKey } from '../utils/auth';
 
+const defaultApiBaseUrl = (() => {
+  if (typeof window === 'undefined') {
+    return 'http://localhost:8001';
+  }
+
+  const { protocol, hostname } = window.location;
+  return `${protocol}//${hostname}:8001`;
+})();
+
 const apiClient = axios.create({
-  baseURL: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/api`,
+  baseURL: `${import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl}/api`,
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',

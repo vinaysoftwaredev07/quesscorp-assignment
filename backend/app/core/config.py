@@ -16,6 +16,16 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
 
+    rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+    rabbitmq_exchange: str = "hrms.events"
+    rabbitmq_listener_queue: str = "hrms.activity.listener"
+    rabbitmq_internal_topic: str = "internal.#"
+    rabbitmq_activity_topic: str = "activity.#"
+    rabbitmq_reconnect_seconds: int = 3
+    event_publish_enabled: bool = True
+    event_listener_enabled: bool = True
+    event_source: str = "hrms.backend"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -1,4 +1,4 @@
-from typing import Protocol
+from typing import Callable, Protocol
 
 from sqlalchemy.orm import Session
 
@@ -14,9 +14,15 @@ class EmployeeServiceInterface(Protocol):
 
 
 class EmployeeService(EmployeeServiceInterface):
-    def __init__(self, db: Session, repository: EmployeeRepositoryInterface | None = None) -> None:
+    def __init__(
+        self,
+        db: Session,
+        repository: EmployeeRepositoryInterface | None = None,
+        event_publisher: Callable[..., None] | None = None,
+    ) -> None:
         self.db = db
         self.repository = repository or EmployeeRepository(db)
+        self.event_publisher = event_publisher
 
     def create_employee(self, payload: EmployeeCreate):
         if self.repository.get_by_employee_id(payload.employee_id):
@@ -33,6 +39,17 @@ class EmployeeService(EmployeeServiceInterface):
 
         employee = self.repository.create(payload.model_dump())
         self.db.commit()
+        if self.event_publisher:
+            self.event_publisher(
+                domain="employee",
+                action="created",
+                payload={
+                    "employee_id": employee.employee_id,
+                    "full_name": employee.full_name,
+                    "email": employee.email,
+                    "department": employee.department,
+                },
+            )
         return employee
 
     def list_employees(self):
@@ -48,3 +65,12 @@ class EmployeeService(EmployeeServiceInterface):
 
         self.repository.delete(employee)
         self.db.commit()
+        if self.event_publisher:
+            self.event_publisher(
+                domain="employee",
+                action="deleted",
+                payload={
+                    "employee_id": employee.employee_id,
+                    "email": employee.email,
+                },
+            )

@@ -6,16 +6,17 @@ import hmac
 
 from app.core.config import get_settings
 from app.db.session import get_db
+from app.events import publish_domain_event
 from app.services.attendance_service import AttendanceService
 from app.services.employee_service import EmployeeService
 
 
 def get_employee_service(db: Session = Depends(get_db)) -> EmployeeService:
-    return EmployeeService(db)
+    return EmployeeService(db, event_publisher=publish_domain_event)
 
 
 def get_attendance_service(db: Session = Depends(get_db)) -> AttendanceService:
-    return AttendanceService(db)
+    return AttendanceService(db, event_publisher=publish_domain_event)
 
 
 def require_superadmin_key(

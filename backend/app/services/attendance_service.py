@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Protocol
+from typing import Callable, Protocol
 
 from sqlalchemy.orm import Session
 
@@ -26,10 +26,12 @@ class AttendanceService(AttendanceServiceInterface):
         db: Session,
         attendance_repository: AttendanceRepositoryInterface | None = None,
         employee_repository: EmployeeRepositoryInterface | None = None,
+        event_publisher: Callable[..., None] | None = None,
     ) -> None:
         self.db = db
         self.attendance_repository = attendance_repository or AttendanceRepository(db)
         self.employee_repository = employee_repository or EmployeeRepository(db)
+        self.event_publisher = event_publisher
 
     def mark_attendance(self, payload: AttendanceCreate) -> tuple[object, bool]:
         employee = self.employee_repository.get_by_employee_id(payload.employee_id)
@@ -43,10 +45,30 @@ class AttendanceService(AttendanceServiceInterface):
         if existing:
             updated = self.attendance_repository.update_status(existing, payload.status)
             self.db.commit()
+            if self.event_publisher:
+                self.event_publisher(
+                    domain="attendance",
+                    action="updated",
+                    payload={
+                        "employee_id": updated.employee_id,
+                        "date": updated.date.isoformat(),
+                        "status": updated.status.value,
+                    },
+                )
             return updated, False
 
         record = self.attendance_repository.create(payload.model_dump())
         self.db.commit()
+        if self.event_publisher:
+            self.event_publisher(
+                domain="attendance",
+                action="marked",
+                payload={
+                    "employee_id": record.employee_id,
+                    "date": record.date.isoformat(),
+                    "status": record.status.value,
+                },
+            )
         return record, True
 
     def get_employee_attendance(
